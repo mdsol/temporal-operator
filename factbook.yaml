@@ -1,0 +1,37 @@
+# Visit https://github.com/mdsol/platform-standards/blob/main/schemas/v1alpha1.schema.md for all the details of this file format.
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+spec:
+  type: other  # Kubernetes operator
+  lifecycle: production
+  owner: platform-assistant@mdsol.com
+  experience: platform
+  security:
+    authentication: []
+    network_accessiblity: [private]
+    data_types: []
+
+metadata:
+  json_schema: https://github.com/mdsol/platform-standards/tree/main/schemas/v1alpha1.schema.json
+  name: temporal-operator
+  title: Temporal Operator
+  description: Kubernetes operator for managing Temporal clusters. Fork of alexandrevilain/temporal-operator with mdsol customizations.
+
+  teams:
+    - number: 04
+
+  people:
+    - email: agogichaishvili@mdsol.com
+      role: technical owner
+    - email: lshen@mdsol.com
+      role: product owner
+
+  channels:
+    - url: https://lse.enterprise.slack.com/archives/C091QE7SHMG
+      role: slack
+      automated_messaging: false
+
+  annotations:
+    github: https://github.com/mdsol/temporal-operator
+    upstream: https://github.com/alexandrevilain/temporal-operator
