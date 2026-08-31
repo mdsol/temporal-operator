@@ -19,6 +19,16 @@ endif
 
 VERSION ?= "$(shell cat VERSION)"
 
+# Container tool used by the local-development targets. Prefers podman when it
+# is installed and falls back to docker, so a podman-only machine works without
+# extra flags while CI (docker) is unaffected. Override with CONTAINER_TOOL=...
+CONTAINER_TOOL ?= $(shell command -v podman >/dev/null 2>&1 && echo podman || echo docker)
+
+# Wall-clock budget for the end-to-end suite. TestPersistence walks every
+# supported upgrade path for six datastore configurations, which is the bulk of
+# it; see the comment in tests/e2e/persistence_test.go.
+E2E_TIMEOUT ?= 90m
+
 # Setting SHELL to bash allows bash commands to be executed by recipes.
 # This is a requirement for 'setup-envtest.sh' in the test target.
 # Options are set to exit when a recipe line exits non-zero or a piped command fails.
@@ -98,13 +108,13 @@ test: manifests generate fmt vet envtest ## Run tests.
 
 .PHONY: test-e2e
 test-e2e: artifacts ## Run end2end tests.
-	go test ./tests/e2e -v -timeout 60m -args "--v=4"
+	go test ./tests/e2e -v -timeout $(E2E_TIMEOUT) -args "--v=4"
 
 .PHONY: test-e2e-dev
 test-e2e-dev: artifacts ## Run end2end tests on dev computer using kind.
-	docker build -t temporal-operator .
-	docker save temporal-operator > /tmp/temporal-operator.tar
-	OPERATOR_IMAGE_PATH=/tmp/temporal-operator.tar go test ./tests/e2e -v -timeout 60m -args "-v=4"
+	$(CONTAINER_TOOL) build -t temporal-operator .
+	$(CONTAINER_TOOL) save temporal-operator > /tmp/temporal-operator.tar
+	OPERATOR_IMAGE_PATH=/tmp/temporal-operator.tar go test ./tests/e2e -v -timeout $(E2E_TIMEOUT) -args "-v=4"
 
 .PHONY: ensure-license
 ensure-license: go-licenser
@@ -138,7 +148,7 @@ run: manifests generate fmt vet ## Run a controller from your host.
 
 .PHONY: docker-build-dev
 docker-build-dev: ## Build docker image with the manager.
-	docker build -t temporal-operator .
+	$(CONTAINER_TOOL) build -t temporal-operator .
 
 ##@ Deployment
 
@@ -173,6 +183,19 @@ helm: helm-docs manifests artifacts
 	$(SEDI) 's/^appVersion: ".*"/appVersion: "v$(shell cat VERSION)"/' charts/temporal-operator/Chart.yaml
 	cp ${RELEASE_PATH}/temporal-operator.crds.yaml charts/temporal-operator/crds
 	$(HELM_DOCS) --chart-search-root=charts/temporal-operator --template-files=hack/helm/template/README.md.gotmpl
+
+.PHONY: verify-chart-crds
+verify-chart-crds: kustomize ## Verify the chart's bundled CRDs are in sync with config/crd.
+	@generated=$$(mktemp); \
+	$(KUSTOMIZE) build config/crd > $$generated; \
+	if ! diff -u charts/temporal-operator/crds/temporal-operator.crds.yaml $$generated; then \
+		rm -f $$generated; \
+		echo ""; \
+		echo "ERROR: charts/temporal-operator/crds/temporal-operator.crds.yaml is out of sync with config/crd."; \
+		echo "Regenerate it with: make artifacts && cp out/release/artifacts/temporal-operator.crds.yaml charts/temporal-operator/crds/"; \
+		exit 1; \
+	fi; \
+	rm -f $$generated
 
 .PHONY: bundle
 bundle: manifests kustomize operator-sdk ## Generate bundle manifests and metadata, then validate generated files.
@@ -216,10 +239,10 @@ HELM_DOCS ?= $(LOCALBIN)/helm-docs
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v4.5.7
 OPERATOR_SDK_VERSION ?= 1.37.0
-CONTROLLER_TOOLS_VERSION ?=  v0.16.3
+CONTROLLER_TOOLS_VERSION ?=  v0.21.0
 GO_LICENSER_VERSION ?= v0.4.0
 GEN_CRD_API_REFERENCE_DOCS_VERSION ?= 3f29e6853552dcf08a8e846b1225f275ed0f3e3b
-GOLANGCI_LINT_VERSION ?= v1.64.8
+GOLANGCI_LINT_VERSION ?= v2.12.2
 YQ_VERSION ?= v4.30.6
 KIND_WITH_REGISTRY_VERSION ?= 0.17.0
 HELM_DOCS_VERSION ?= v1.12.0
@@ -252,7 +275,7 @@ $(OPERATOR_SDK): $(LOCALBIN)
 golangci-lint: $(GOLANGCI_LINT)
 $(GOLANGCI_LINT): $(LOCALBIN)
 	test -s $(LOCALBIN)/golangci-lint && $(LOCALBIN)/golangci-lint version | grep -q $(GOLANGCI_LINT_VERSION) || \
-	GOBIN=$(LOCALBIN) go install github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+	GOBIN=$(LOCALBIN) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
 
 .PHONY: go-licenser
 go-licenser: $(GO_LICENSER)
